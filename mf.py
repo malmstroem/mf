@@ -19,14 +19,13 @@ from itertools import izip_longest
 import logging
 import os
 from os.path import basename, dirname, exists, isabs, isdir, join, splitext
-import posix
 import re
 from subprocess import call, check_call, check_output, CalledProcessError
 import sys
 from tempfile import mkdtemp, NamedTemporaryFile
 
 
-__version__='1.0.3'
+__version__ = "1.0.3"
 
 
 class Action(object):
@@ -66,6 +65,7 @@ class Action(object):
 
         The exception message gives a reason.
         """
+
         pass
 
     def process(self, fmts, **state):
@@ -94,7 +94,7 @@ class NewName(Action):
     """
 
     def process(self, fmts, **state):
-        if state['old'] != state['new']:
+        if state["old"] != state["new"]:
             fmts.append("ln -f '{old}' '{new}'")
         return (fmts, state)
 
@@ -105,7 +105,7 @@ class Remove(Action):
     """
 
     def process(self, fmts, **state):
-        if not state['keep']:
+        if not state["keep"]:
             fmts.append("rm -f '{old}'")
         return (fmts, state)
 
@@ -114,39 +114,41 @@ class Rename(Action):
     """
     Rename files according to a user-specified pattern.
     """
+
     def __init__(self, opts):
         super(Rename, self).__init__(opts)
         if not opts.from_pattern or not opts.to_pattern:
             self._from_pattern = None
             self.to_pattern = None
         else:
-            if opts.from_pattern.count('*') != opts.to_pattern.count('*'):
+            if opts.from_pattern.count("*") != opts.to_pattern.count("*"):
                 raise RuntimeError(
                     "The patterns provided to `--from-pattern` and `--to-pattern`"
-                    " do not contain the same number of `*` wildcard characters.")
+                    " do not contain the same number of `*` wildcard characters."
+                )
             self.from_pattern = self._make_filename_re(opts.from_pattern)
             self.to_pattern = self._make_filename_fmt(opts.to_pattern)
 
     def _make_filename_re(self, glob_pattern):
-        return re.compile(self._make_star_pattern(
-            glob_pattern, r'(?P<wildcard{0}>.*)', re.escape))
+        return re.compile(
+            self._make_star_pattern(glob_pattern, r"(?P<wildcard{0}>.*)", re.escape)
+        )
 
     def _make_filename_fmt(self, glob_pattern):
         return self._make_star_pattern(
-            glob_pattern, r'{{wildcard{0}}}', lambda arg: arg)
+            glob_pattern, r"{{wildcard{0}}}", lambda arg: arg
+        )
 
     @staticmethod
     def _make_star_pattern(glob_pattern, star_fmt, escape):
         glob_pattern, ext = split_image_extension(glob_pattern)
-        parts = glob_pattern.split('*')
+        parts = glob_pattern.split("*")
         num_stars = len(parts) - 1
-        stars = [star_fmt.format(n)
-                 for n in range(num_stars)]
+        stars = [star_fmt.format(n) for n in range(num_stars)]
         fmt = (
-            ''.join(
-                ''.join([escape(parts[n]), stars[n]])
-                for n in range(num_stars)
-            ) + parts[-1] + ext
+            "".join("".join([escape(parts[n]), stars[n]]) for n in range(num_stars))
+            + parts[-1]
+            + ext
         )
         return fmt
 
@@ -157,8 +159,8 @@ class Rename(Action):
         if not match:
             raise self.Reject(
                 "File name `{0}` does not match pattern"
-                " provided with `--from-pattern`"
-                .format(filename))
+                " provided with `--from-pattern`".format(filename)
+            )
         params = match.groupdict()
         new = self.to_pattern.format(**params)
         return (new, params)
@@ -169,16 +171,16 @@ class TiffToPng(Action):
     Convert TIFF files to PNG.
     """
 
-    name = 'tiff-to-png'
+    name = "tiff-to-png"
 
     def accept(self, filename):
         stem, ext = os.path.splitext(filename)
-        if ext.lower() in ['.tif', '.tiff']:
+        if ext.lower() in [".tif", ".tiff"]:
             return (
                 # destination file name
-                stem + '.png',
+                stem + ".png",
                 # additional state
-                {}
+                {},
             )
         else:
             raise self.Reject("not a TIFF file")
@@ -187,70 +189,79 @@ class TiffToPng(Action):
         fmts.append("convert -depth 16 -colorspace gray '{old}' '{new}'")
         return (fmts, state)
 
+
 class CQ1ToCV7k(Action):
     """
     Convert file names from the pattern used on YEC CQ1 microscopes
     to Yokogawa's CV7000.
     """
 
-    name = 'cq1-to-cv7k'
+    name = "cq1-to-cv7k"
 
     def __init__(self, opts):
         super(CQ1ToCV7k, self).__init__(opts)
         try:
-            self._plate_width, self._plate_height = self._parse_plate_size(opts.plate_size)
+            self._plate_width, self._plate_height = self._parse_plate_size(
+                opts.plate_size
+            )
         except AttributeError:
             raise ValueError(
                 "Parsing CQ1 file names requires"
                 " that a plate size is set. "
-                " Use the `--plate-size` command line option.")
+                " Use the `--plate-size` command line option."
+            )
 
     def _parse_plate_size(self, spec):
-        wh = spec.split('x')
+        wh = spec.split("x")
         if len(wh) != 2:
             raise ValueError(
                 "Argument of `--plate-size` must have the format WxH,"
-                " where W and H are positive integers.")
+                " where W and H are positive integers."
+            )
         w = int(wh[0])
         h = int(wh[1])
         if w < 1 or h < 1:
             raise ValueError(
                 "Argument of `--plate-size` must have the format WxH,"
-                " where W and H are positive integers.")
+                " where W and H are positive integers."
+            )
         return w, h
 
     def accept(self, filename):
         match = self._cq1_pattern.match(filename)
         if not match:
-            raise self.Reject(
-                "file name does not match the configured CQ1 pattern")
+            raise self.Reject("file name does not match the configured CQ1 pattern")
         # extract metadata from the file name
         try:
             old_md = match.groupdict()
             new_md = {}
-            new_md['experiment_name'] = old_md['experiment_name']
-            new_md['well_letter'], new_md['well_nr'] = self._to_cv7k_well(old_md['well_idx'])
-            new_md['site'] = int(old_md['site'])
-            new_md['channel'] = int(old_md['channel_nr'])
+            new_md["experiment_name"] = old_md["experiment_name"]
+            new_md["well_letter"], new_md["well_nr"] = self._to_cv7k_well(
+                old_md["well_idx"]
+            )
+            new_md["site"] = int(old_md["site"])
+            new_md["channel"] = int(old_md["channel_nr"])
         except Exception as err:
             raise RuntimeError(
-                "Cannot parse file name `{0}` with Visitron pattern: {1}"
-                .format(filename, err))
+                "Cannot parse file name `{0}` with Visitron pattern: {1}".format(
+                    filename, err
+                )
+            )
         return (
             # destination
             self._cv7000_fmt.format(**new_md),
             # additional state
-            new_md
+            new_md,
         )
 
     def _to_cv7k_well(self, well_idx):
         well_idx = int(well_idx) - 1  # CQ1 uses 1-based indexing
         assert well_idx < self._plate_width * self._plate_height
-        well_letter = chr(ord('A') + (well_idx // self._plate_width))
+        well_letter = chr(ord("A") + (well_idx // self._plate_width))
         well_nr = 1 + (well_idx % self._plate_width)
         return well_letter, well_nr
 
-    _cv7000_fmt = '{experiment_name}_{well_letter}{well_nr:02d}_T0001F{site:03d}L01A{channel:02d}Z01C{channel:02d}.tif'
+    _cv7000_fmt = "{experiment_name}_{well_letter}{well_nr:02d}_T0001F{site:03d}L01A{channel:02d}Z01C{channel:02d}.tif"
 
     # FIXME: is this pattern specific of the current configuration of
     # the YEC CQ1 microscopes at PelkmansLab?
@@ -260,14 +271,15 @@ class CQ1ToCV7k(Action):
             #
             #     20190823TissueARTest_W0016F0001T0001Z000C1.tif
             #
-            r'(?P<experiment_name>.+)'
-            r'_W(?P<well_idx>[0-9]+)'
-            r'F(?P<site>[0-9]+)'
-            r'T0001Z000'
-            r'C(?P<channel_nr>[0-9]+)'
-            r'\.'
+            r"(?P<experiment_name>.+)"
+            r"_W(?P<well_idx>[0-9]+)"
+            r"F(?P<site>[0-9]+)"
+            r"T0001Z000"
+            r"C(?P<channel_nr>[0-9]+)"
+            r"\."
         )
     )
+
 
 class IC6kToCV7k(Action):
     """
@@ -275,50 +287,54 @@ class IC6kToCV7k(Action):
     to Yokogawa's CV7000.
     """
 
-    name = 'ic6k-to-cv7k'
+    name = "ic6k-to-cv7k"
 
     def accept(self, filename):
         match = self._ic6000_pattern.match(filename)
         if not match:
-            raise self.Reject(
-                "file name does not match the configured IC6000 pattern")
+            raise self.Reject("file name does not match the configured IC6000 pattern")
         # extract metadata from the file name
         try:
             old_md = match.groupdict()
             new_md = {}
-            new_md['experiment_name'] = (old_md['date'] + '_' + old_md['name'])
-            new_md['well_letter'] = old_md['well_letter']
-            new_md['well_nr'] = int(old_md['well_nr'])
-            new_md['site'] = int(old_md['site'])
+            new_md["experiment_name"] = old_md["date"] + "_" + old_md["name"]
+            new_md["well_letter"] = old_md["well_letter"]
+            new_md["well_nr"] = int(old_md["well_nr"])
+            new_md["site"] = int(old_md["site"])
             # If the IC6K filename contains a Z position, use it
-            if old_md['z_pos'] is not None:
-                new_md['zslice'] = int(old_md['z_pos'])
+            if old_md["z_pos"] is not None:
+                new_md["zslice"] = int(old_md["z_pos"])
             # If there is no z position in the filename, default to 1
             else:
-                new_md['zslice'] = 1
+                new_md["zslice"] = 1
 
             # If Blue+Cy5 -> C06.
-            if old_md['channel_color'] == 'Blue' and old_md['channel_tag'] == 'Cy5':
-                new_md['channel'] = 6
+            if old_md["channel_color"] == "Blue" and old_md["channel_tag"] == "Cy5":
+                new_md["channel"] = 6
             # If TL-Brightfield + dsRed -> C05.
-            elif old_md['channel_color'] == 'TL-Brightfield' and old_md['channel_tag'] == 'dsRed':
-                new_md['channel'] = 5
-            elif old_md['channel_tag'] is not None:
-                new_md['channel'] = self._ic6000_channels[old_md['channel_tag']]
+            elif (
+                old_md["channel_color"] == "TL-Brightfield"
+                and old_md["channel_tag"] == "dsRed"
+            ):
+                new_md["channel"] = 5
+            elif old_md["channel_tag"] is not None:
+                new_md["channel"] = self._ic6000_channels[old_md["channel_tag"]]
             else:
-                new_md['channel'] = self._default_channel
+                new_md["channel"] = self._default_channel
         except Exception as err:
             raise RuntimeError(
-                "Cannot parse file name `{0}` with IC6000 pattern: {1}"
-                .format(filename, err))
+                "Cannot parse file name `{0}` with IC6000 pattern: {1}".format(
+                    filename, err
+                )
+            )
         return (
             # destination
             self._cv7000_fmt.format(**new_md),
             # additional state
-            new_md
+            new_md,
         )
 
-    _cv7000_fmt = '{experiment_name}_{well_letter}{well_nr:02d}_T0001F{site:03d}L01A01Z{zslice:02d}C{channel:02d}.tif'
+    _cv7000_fmt = "{experiment_name}_{well_letter}{well_nr:02d}_T0001F{site:03d}L01A01Z{zslice:02d}C{channel:02d}.tif"
 
     # FIXME: this pattern seems specific to the current configuration
     # of the IC6000 at PelkmansLab
@@ -332,26 +348,27 @@ class IC6kToCV7k(Action):
             #
             #  20191206_NewconditionsBF1_N - 08(fld 49 wv TL-Brightfield - dsRed).tif
             #
-            r'(?P<date>[0-9]{8})_'
-            r'(?P<name>[^_]+)_'
-            r'(?P<well_letter>[A-Z]+) - (?P<well_nr>[0-9]+)'
-            r'\('
-            r'fld (?P<site>[0-9]+)'
-            r'( wv (?P<channel_color>[A-Za-z\-]+) - (?P<channel_tag>\w*))?'
-            r'( z (?P<z_pos>\d+))?'
-            r'\)'
-            r'\.'
+            r"(?P<date>[0-9]{8})_"
+            r"(?P<name>[^_]+)_"
+            r"(?P<well_letter>[A-Z]+) - (?P<well_nr>[0-9]+)"
+            r"\("
+            r"fld (?P<site>[0-9]+)"
+            r"( wv (?P<channel_color>[A-Za-z\-]+) - (?P<channel_tag>\w*))?"
+            r"( z (?P<z_pos>\d+))?"
+            r"\)"
+            r"\."
         ),
         #'(?P<w>[A-Z]\D*\d*)\(fld\D*(?P<s>\d*)\D*wv(?P<c>.*)\).(tif|png)',
-        re.I)
+        re.I,
+    )
 
     # FIXME: like the above, this pattern seems specific to the
     # current configuration of the IC6000 at PelkmansLab
     _ic6000_channels = {
-        'DAPI':  1,
-        'FITC':  2,
-        'dsRed': 3,
-        'Cy5':   4,
+        "DAPI": 1,
+        "FITC": 2,
+        "dsRed": 3,
+        "Cy5": 4,
     }
 
     # when acquiring a single channel, IC6000 does not write the
@@ -366,64 +383,74 @@ class VisiToCV7k(Action):
     to Yokogawa's CV7000.
     """
 
-    name = 'visi-to-cv7k'
+    name = "visi-to-cv7k"
 
     def __init__(self, opts):
         super(VisiToCV7k, self).__init__(opts)
         try:
-            self._plate_width, self._plate_height = self._parse_plate_size(opts.plate_size)
+            self._plate_width, self._plate_height = self._parse_plate_size(
+                opts.plate_size
+            )
         except AttributeError:
             raise ValueError(
                 "Parsing VisiTIRF/VisiScope file names requires"
                 " that a plate size is set. "
-                " Use the `--plate-size` command line option.")
+                " Use the `--plate-size` command line option."
+            )
 
     def _parse_plate_size(self, spec):
-        wh = spec.split('x')
+        wh = spec.split("x")
         if len(wh) != 2:
             raise ValueError(
                 "Argument of `--plate-size` must have the format WxH,"
-                " where W and H are positive integers.")
+                " where W and H are positive integers."
+            )
         w = int(wh[0])
         h = int(wh[1])
         if w < 1 or h < 1:
             raise ValueError(
                 "Argument of `--plate-size` must have the format WxH,"
-                " where W and H are positive integers.")
+                " where W and H are positive integers."
+            )
         return w, h
 
     def accept(self, filename):
         match = self._visi_pattern.match(filename)
         if not match:
             raise self.Reject(
-                "file name does not match the configured VisiScope/VisiTIRF pattern")
+                "file name does not match the configured VisiScope/VisiTIRF pattern"
+            )
         # extract metadata from the file name
         try:
             old_md = match.groupdict()
             new_md = {}
-            new_md['experiment_name'] = old_md['experiment_name']
-            new_md['well_letter'], new_md['well_nr'] = self._to_cv7k_well(old_md['well_idx'])
-            new_md['site'] = int(old_md['site'])
-            new_md['channel'] = int(old_md['channel_nr'])
+            new_md["experiment_name"] = old_md["experiment_name"]
+            new_md["well_letter"], new_md["well_nr"] = self._to_cv7k_well(
+                old_md["well_idx"]
+            )
+            new_md["site"] = int(old_md["site"])
+            new_md["channel"] = int(old_md["channel_nr"])
         except Exception as err:
             raise RuntimeError(
-                "Cannot parse file name `{0}` with Visitron pattern: {1}"
-                .format(filename, err))
+                "Cannot parse file name `{0}` with Visitron pattern: {1}".format(
+                    filename, err
+                )
+            )
         return (
             # destination
             self._cv7000_fmt.format(**new_md),
             # additional state
-            new_md
+            new_md,
         )
 
     def _to_cv7k_well(self, well_idx):
         well_idx = int(well_idx) - 1  # Visitron uses 1-based indexing
         assert well_idx < self._plate_width * self._plate_height
-        well_letter = chr(ord('A') + (well_idx // self._plate_width))
+        well_letter = chr(ord("A") + (well_idx // self._plate_width))
         well_nr = 1 + (well_idx % self._plate_width)
         return well_letter, well_nr
 
-    _cv7000_fmt = '{experiment_name}_{well_letter}{well_nr:02d}_T0001F{site:03d}L01A{channel:02d}Z01C{channel:02d}.tif'
+    _cv7000_fmt = "{experiment_name}_{well_letter}{well_nr:02d}_T0001F{site:03d}L01A{channel:02d}Z01C{channel:02d}.tif"
 
     # FIXME: is this pattern specific of the current configuration of
     # the Visitron microscopes at PelkmansLab?
@@ -440,21 +467,21 @@ class VisiToCV7k(Action):
             #     MT_test_well1_1_w4tirfCy5_s1.png
             #     MT_test_well10_1_w4tirfCy5_s2.png
             #
-            r'(?P<experiment_name>.+)'
-            r'_well(?P<well_idx>[0-9]+)'
-            r'_1'
-            r'_w(?P<channel_nr>[0-9]+)(?P<channel_tag>.+)'
-            r'_s(?P<site>[0-9]+)'
-            r'\.'
+            r"(?P<experiment_name>.+)"
+            r"_well(?P<well_idx>[0-9]+)"
+            r"_1"
+            r"_w(?P<channel_nr>[0-9]+)(?P<channel_tag>.+)"
+            r"_s(?P<site>[0-9]+)"
+            r"\."
         )
     )
 
 
 ## utility functions
 
+
 def build_path_list(paths):
-    """
-    """
+    """ """
     cwd = os.getcwd()
     result = []
     for path in paths:
@@ -505,8 +532,8 @@ def quote(arg):
 def run(cmds, just_print=True, batch=0, verb=None):
     if verb is None:
         verb, _ = splitext(basename(sys.argv[0]))
-        if verb == '__main__':
-            verb = 'process'
+        if verb == "__main__":
+            verb = "process"
     if just_print:
         # print commands but don't run them
         for cmd in cmds:
@@ -519,9 +546,7 @@ def run(cmds, just_print=True, batch=0, verb=None):
         errored = 0
         for cmd in cmds:
             try:
-                check_call(
-                    ["sh", "-c", ("set -e -x; %s" % cmd)],
-                    shell=False)
+                check_call(["sh", "-c", ("set -e -x; %s" % cmd)], shell=False)
                 done += 1
             except CalledProcessError as err:
                 if err.returncode == 127:
@@ -530,48 +555,54 @@ def run(cmds, just_print=True, batch=0, verb=None):
                         "A needed command was not found;"
                         " see error messages above."
                         " Aborting execution early"
-                        " ({0:d} procesed, {1:d} still to do)."
-                        .format(done, len(cmds)-done))
+                        " ({0:d} procesed, {1:d} still to do).".format(
+                            done, len(cmds) - done
+                        )
+                    )
                 else:
                     errored += 1
         print(
-            "Successfully applied {verb} to {done} files,"
-            " {errored} errors."
-            .format(verb=verb, done=done, errored=errored))
+            "Successfully applied {verb} to {done} files," " {errored} errors.".format(
+                verb=verb, done=done, errored=errored
+            )
+        )
 
 
 def split_image_extension(filename):
     stem, ext = splitext(filename)
     if ext.lower() in [
-            '.jpg', '.jpeg'
-            '.png',
-            '.tiff', '.tif',
+        ".jpg",
+        ".jpeg" ".png",
+        ".tiff",
+        ".tif",
     ]:
         return (stem, ext)
     else:
-        return (filename, '')
+        return (filename, "")
 
 
 def submit_to_slurm(cmds, size=200, prefix=None):
     if prefix is None:
         stem, _ = splitext(basename(sys.argv[0]))
         prefix = stem
-    if not prefix.endswith('.'):
-        prefix += '.'
+    if not prefix.endswith("."):
+        prefix += "."
 
     # NOTE: we need the `jobdir` directory to be visible (under the
     # same path) from both submission and worker nodes -- let's just
     # assume that the current working directory has this property
     cwd = os.getcwd()
-    jobdir = mkdtemp(dir=cwd, prefix=prefix, suffix='.d')
+    jobdir = mkdtemp(dir=cwd, prefix=prefix, suffix=".d")
     for n, batch in enumerate(grouper(cmds, size, None)):
-        array_task_job = '{0}/{1}{2}.sh'.format(jobdir, prefix, n)
-        with open(array_task_job, 'w') as script:
-            script.write("""#! /bin/sh
+        array_task_job = "{0}/{1}{2}.sh".format(jobdir, prefix, n)
+        with open(array_task_job, "w") as script:
+            script.write(
+                """#! /bin/sh
 
 # print commands e(x)ecuted and (e)xit on first error
 set -e -x
-            """)
+            """
+            )
             for cmd in batch:
                 # `grouper(..., None)` will right-pad the shorter
                 # batches with `None`, to ensure all batches have the
@@ -580,19 +611,21 @@ set -e -x
                 if cmd is None:
                     break
                 print("{cmd}".format(cmd=cmd), file=script)
-            script.write("""
+            script.write(
+                """
 # if we get to this point, all went well
 exit 0
             """.format(
-                array_task_job=array_task_job,
-                jobdir=jobdir,
-            ))
+                    array_task_job=array_task_job,
+                    jobdir=jobdir,
+                )
+            )
             # ensure everything is actually written to disk
             script.flush()
 
-    with NamedTemporaryFile(
-            prefix=prefix, suffix='.sh', delete=True) as script:
-        script.write("""#!/bin/sh
+    with NamedTemporaryFile(prefix=prefix, suffix=".sh", delete=True) as script:
+        script.write(
+            """#!/bin/sh
 #SBATCH -c 1
 #SBATCH --mem-per-cpu=256m
 #SBATCH --time={minutes}
@@ -601,24 +634,27 @@ exit 0
 
 exec /bin/sh {jobdir}/{prefix}"$SLURM_ARRAY_TASK_ID".sh "$@"
         """.format(
-            cwd=cwd,
-            jobdir=jobdir,
-            minutes=int(1 + (25.0 * size)/60),
-            prefix=prefix,
-        ))
+                cwd=cwd,
+                jobdir=jobdir,
+                minutes=int(1 + (25.0 * size) / 60),
+                prefix=prefix,
+            )
+        )
         # ensure everything is actually written to disk
         script.flush()
 
         # now submit job array
-        jobid = check_output(['sbatch', '--parsable', '--array=0-{n}'.format(n=n), script.name])
-        if ';' in jobid:
-            jobid = jobid.split(';')[0]
+        jobid = check_output(
+            ["sbatch", "--parsable", "--array=0-{n}".format(n=n), script.name]
+        )
+        if ";" in jobid:
+            jobid = jobid.split(";")[0]
         jobid = jobid.strip()
         print("Submitted batch job {jobid}".format(jobid=jobid))
 
-    with NamedTemporaryFile(
-            prefix=prefix, suffix='.cleanup.sh', delete=True) as script:
-        script.write("""#!/bin/sh
+    with NamedTemporaryFile(prefix=prefix, suffix=".cleanup.sh", delete=True) as script:
+        script.write(
+            """#!/bin/sh
 #SBATCH -c 1
 #SBATCH --mem-per-cpu=256m
 #SBATCH --time=1
@@ -627,15 +663,23 @@ exec /bin/sh {jobdir}/{prefix}"$SLURM_ARRAY_TASK_ID".sh "$@"
 
 rm -rfv {jobdir}
         """.format(
-            cwd=cwd,
-            jobdir=jobdir,
-            prefix=prefix,
-        ))
+                cwd=cwd,
+                jobdir=jobdir,
+                prefix=prefix,
+            )
+        )
         # ensure everything is actually written to disk
         script.flush()
 
         # submit the cleanup job...
-        call(['sbatch', '--kill-on-invalid-dep=yes', '--dependency=afterok:{jobid}'.format(jobid=jobid), script.name])
+        call(
+            [
+                "sbatch",
+                "--kill-on-invalid-dep=yes",
+                "--dependency=afterok:{jobid}".format(jobid=jobid),
+                script.name,
+            ]
+        )
 
 
 def xor(a, b):
@@ -644,22 +688,21 @@ def xor(a, b):
 
 ## main
 
+
 def build_pipeline(args):
-    actions = [
-        Mention(args)
-    ]
+    actions = [Mention(args)]
     # apply microscope metadata conversion before anything else
     if args.rename:
-        if args.creator == 'ic6k':
+        if args.creator == "ic6k":
             actions.append(IC6kToCV7k(args))
-        elif args.creator == 'visi':
+        elif args.creator == "visi":
             actions.append(VisiToCV7k(args))
-        elif args.creator == 'cq1':
+        elif args.creator == "cq1":
             actions.append(CQ1ToCV7k(args))
         else:
             raise AssertionError(
-                "Unexpected value for the `--creator` option: {}"
-                .format(creator))
+                "Unexpected value for the `--creator` option: {}".format(creator)
+            )
     # user-specified rename
     if args.from_pattern:
         actions.append(Rename(args))
@@ -680,9 +723,9 @@ def do_actions(actions, args):
     for path in inbox:
         filename = basename(path)
         state = {
-            'old': path,
-            'check': args.check,
-            'keep': args.keep,
+            "old": path,
+            "check": args.check,
+            "keep": args.keep,
         }
         for action in actions:
             try:
@@ -694,11 +737,13 @@ def do_actions(actions, args):
             state.update(params)
             filename = new
         else:
-            state['new'] = join(dirname(path), filename)
+            state["new"] = join(dirname(path), filename)
             to_do[path] = state
     print(
-        "Examined {total} files: {to_do} to process, {ignored} ignored."
-        .format(total=len(inbox), to_do=len(to_do), ignored=ignored))
+        "Examined {total} files: {to_do} to process, {ignored} ignored.".format(
+            total=len(inbox), to_do=len(to_do), ignored=ignored
+        )
+    )
 
     # build and run list of commands
     if to_do:
@@ -707,7 +752,7 @@ def do_actions(actions, args):
             fmts = []
             for action in actions:
                 fmts, state = action.process(fmts, **state)
-            cmd = '\n'.join(fmt.format(**state) for fmt in fmts)
+            cmd = "\n".join(fmt.format(**state) for fmt in fmts)
             cmds.append(cmd)
         run(cmds, args.check, (args.batch_size if args.batch else 0))
 
@@ -715,115 +760,187 @@ def do_actions(actions, args):
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
-        format='%(levelname)8s: %(message)s',
+        format="%(levelname)8s: %(message)s",
     )
 
 
 def parse_command_line(argv):
     cmdline = argparse.ArgumentParser(description=__doc__)
-    cmdline.add_argument('path', nargs='+',
-                         help=('Path(s) of the files or directory on which to act.'))
-    cmdline.add_argument('--batch', '-batch', '-b',
-                         action='store_true', default=False,
-                         help=(
-                             'Submit action to SLURM cluster in batches.'
-                             ' If this option is *not* specified,'
-                             ' images will be processed one by one.'
-                             ' The batch size can be controlled'
-                             ' with option `--batch-size`.'))
-    cmdline.add_argument('--batch-size', metavar='NUM',
-                         action='store', type=int, default=200,
-                         help=(
-                             'Process images in independent batches of size NUM on a cluster.'
-                             ' Only used in conjunction with option `--batch`.'
-                             ' if NUM is not given, process images in batches of 200.'))
-    cmdline.add_argument('--check', '-check', '--just-print', '-n',
-                         action='store_true', default=False,
-                         help='Print commands but do not execute them.')
-    cmdline.add_argument('--convert', action='store_true', default=False,
-                         help='Convert TIFF images to 16-bit grayscale PNG.')
-    cmdline.add_argument('--creator', '-C', metavar='MODEL',
-                         action='store', default='ic6k',
-                         choices=[
-                             'ic6k',  # IN Cell 6000
-                             'visi',  # Visitron VisiTIRF/VisiScope
-                             'cq1',  # YEC CQ1
-                         ],
-                         help=("Model of the microscope that produced"
-                               " input files.  Sets the format used"
-                               " for extracting meta-data from file"
-                               " names.  Valid values are:"
-                               " `ic6k` for the IN Cell 6000 (default), and"
-                               " `visi` for Visitron's VisiTIRF/Visiscope, and"
-                               " 'cq1' for YEC CQ1."))
-    cmdline.add_argument('--from-pattern', '-f',
-                         action='store', default='', metavar='PATTERN',
-                         help=("Pattern that input files must match."
-                               " Every occurrence of the `*` character"
-                               " here can match any (possibly empty)"
-                               " sequence of characters, which will be"
-                               " preserved in the 'to' pattern;"
-                               " anything else will be replaced"
-                               " with the corresponding string"
-                               " in the pattern given by"
-                               " the `---to-pattern` option."
-                               " NOTE: no `.tif` or `.png` or similar"
-                               " extension should be given in the pattern;"
-                               " it will be automatically added."))
-    cmdline.add_argument('--keep', '-keep', action='store_true', dest='keep',
-                         help="Do not delete original files.")
-    cmdline.add_argument('--no-keep', '-no-keep', action='store_false', dest='keep',
-                         help="Delete original files (default).")
-    cmdline.add_argument('--plate-size', metavar='WxH',
-                         action='store',
-                         help=("Assume a plate W sites wide and H sites high."
-                               " Only needed and used when renaming"
-                               " and the creator is a Visitron or YEC microscope."))
-    cmdline.add_argument('--rename', action='store_true', default=False,
-                         help=("Rename image files"
-                               " from the creator microscope naming"
-                               " convention (see option `--creator`)"
-                               " to the Yokogawa CV7000 one."))
-    cmdline.add_argument('--to-pattern', '-t',
-                         action='store', default='', metavar='PATTERN',
-                         help=("Pattern to produce output file names."
-                               " Every occurrence of the `*` character"
-                               " here will be substituted with the"
-                               " (possibly empty) sequence matched by"
-                               " the original filename in the pattern"
-                               " given to the `--from-pattern` option."
-                               " NOTE: no `.tif` or `.png` or similar"
-                               " extension should be given in the pattern;"
-                               " it will be automatically added."))
-    cmdline.add_argument('--version', '-V',
-                         action='version',
-                         version=('%(prog)s v{0}'.format(__version__)),
-                         help="Print program version and exit.")
+    cmdline.add_argument(
+        "path", nargs="+", help=("Path(s) of the files or directory on which to act.")
+    )
+    cmdline.add_argument(
+        "--batch",
+        "-batch",
+        "-b",
+        action="store_true",
+        default=False,
+        help=(
+            "Submit action to SLURM cluster in batches."
+            " If this option is *not* specified,"
+            " images will be processed one by one."
+            " The batch size can be controlled"
+            " with option `--batch-size`."
+        ),
+    )
+    cmdline.add_argument(
+        "--batch-size",
+        metavar="NUM",
+        action="store",
+        type=int,
+        default=200,
+        help=(
+            "Process images in independent batches of size NUM on a cluster."
+            " Only used in conjunction with option `--batch`."
+            " if NUM is not given, process images in batches of 200."
+        ),
+    )
+    cmdline.add_argument(
+        "--check",
+        "-check",
+        "--just-print",
+        "-n",
+        action="store_true",
+        default=False,
+        help="Print commands but do not execute them.",
+    )
+    cmdline.add_argument(
+        "--convert",
+        action="store_true",
+        default=False,
+        help="Convert TIFF images to 16-bit grayscale PNG.",
+    )
+    cmdline.add_argument(
+        "--creator",
+        "-C",
+        metavar="MODEL",
+        action="store",
+        default="ic6k",
+        choices=[
+            "ic6k",  # IN Cell 6000
+            "visi",  # Visitron VisiTIRF/VisiScope
+            "cq1",  # YEC CQ1
+        ],
+        help=(
+            "Model of the microscope that produced"
+            " input files.  Sets the format used"
+            " for extracting meta-data from file"
+            " names.  Valid values are:"
+            " `ic6k` for the IN Cell 6000 (default), and"
+            " `visi` for Visitron's VisiTIRF/Visiscope, and"
+            " 'cq1' for YEC CQ1."
+        ),
+    )
+    cmdline.add_argument(
+        "--from-pattern",
+        "-f",
+        action="store",
+        default="",
+        metavar="PATTERN",
+        help=(
+            "Pattern that input files must match."
+            " Every occurrence of the `*` character"
+            " here can match any (possibly empty)"
+            " sequence of characters, which will be"
+            " preserved in the 'to' pattern;"
+            " anything else will be replaced"
+            " with the corresponding string"
+            " in the pattern given by"
+            " the `---to-pattern` option."
+            " NOTE: no `.tif` or `.png` or similar"
+            " extension should be given in the pattern;"
+            " it will be automatically added."
+        ),
+    )
+    cmdline.add_argument(
+        "--keep",
+        "-keep",
+        action="store_true",
+        dest="keep",
+        help="Do not delete original files.",
+    )
+    cmdline.add_argument(
+        "--no-keep",
+        "-no-keep",
+        action="store_false",
+        dest="keep",
+        help="Delete original files (default).",
+    )
+    cmdline.add_argument(
+        "--plate-size",
+        metavar="WxH",
+        action="store",
+        help=(
+            "Assume a plate W sites wide and H sites high."
+            " Only needed and used when renaming"
+            " and the creator is a Visitron or YEC microscope."
+        ),
+    )
+    cmdline.add_argument(
+        "--rename",
+        action="store_true",
+        default=False,
+        help=(
+            "Rename image files"
+            " from the creator microscope naming"
+            " convention (see option `--creator`)"
+            " to the Yokogawa CV7000 one."
+        ),
+    )
+    cmdline.add_argument(
+        "--to-pattern",
+        "-t",
+        action="store",
+        default="",
+        metavar="PATTERN",
+        help=(
+            "Pattern to produce output file names."
+            " Every occurrence of the `*` character"
+            " here will be substituted with the"
+            " (possibly empty) sequence matched by"
+            " the original filename in the pattern"
+            " given to the `--from-pattern` option."
+            " NOTE: no `.tif` or `.png` or similar"
+            " extension should be given in the pattern;"
+            " it will be automatically added."
+        ),
+    )
+    cmdline.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=("%(prog)s v{0}".format(__version__)),
+        help="Print program version and exit.",
+    )
 
     args = cmdline.parse_args(argv)
 
     # accept non-option actions for backwards compatibility
-    if args.path[0] == 'convert':
+    if args.path[0] == "convert":
         logging.warning(
             "Please add `--convert` on the command-line"
-            " instead of writing `convert` as first file name.")
+            " instead of writing `convert` as first file name."
+        )
         args.convert = True
         del args.path[0]
-    elif args.path[0] == 'rename':
+    elif args.path[0] == "rename":
         logging.warning(
             "Please add `--rename` on the command-line"
-            " instead of writing `rename` as first file name.")
+            " instead of writing `rename` as first file name."
+        )
         args.rename = True
         del args.path[0]
 
     if not (args.convert or args.rename):
         cmdline.error(
-            "At least one of options `--convert` or `--rename` should be given.")
+            "At least one of options `--convert` or `--rename` should be given."
+        )
 
     if xor(args.from_pattern, args.to_pattern):
         cmdline.error(
             "If one of options `--from-pattern` or `--to-pattern` is given,"
-            " then the other must be given as well.")
+            " then the other must be given as well."
+        )
 
     return args
 
@@ -840,6 +957,7 @@ def main(argv=sys.argv[1:]):
         sys.exit(os.EX_SOFTWARE)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import sys
+
     main(sys.argv[1:])
