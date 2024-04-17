@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # pylint: disable=fixme,line-too-long
 
@@ -15,7 +15,7 @@ Micro File manipulation utility.
 from __future__ import absolute_import, division, print_function
 
 import argparse
-from itertools import izip_longest
+from itertools import zip_longest
 import logging
 import os
 from os.path import basename, dirname, exists, isabs, isdir, join, splitext
@@ -512,7 +512,7 @@ def grouper(iterable, size, fillvalue=None):
       ('G', 'x', 'x')
     """
     args = [iter(iterable)] * size
-    return izip_longest(*args, fillvalue=fillvalue)
+    return zip_longest(*args, fillvalue=fillvalue)
 
 
 def listdir_recursive(path):
@@ -748,7 +748,7 @@ def do_actions(actions, args):
     # build and run list of commands
     if to_do:
         cmds = []
-        for path, state in to_do.iteritems():
+        for path, state in to_do.items():
             fmts = []
             for action in actions:
                 fmts, state = action.process(fmts, **state)
